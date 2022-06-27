@@ -2,8 +2,9 @@ name: Test and Deploy
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   unit-tests:
@@ -33,7 +34,9 @@ jobs:
     needs: deploy
     steps:
     - uses: actions/checkout@v3
+    - name: Setup Clojure
+      uses: DeLaGuardo/setup-clojure@5.1
+      with:
+        bb: 0.8.156
     - name: Run E2E tests
-      run: |
-        chmod +x "${GITHUB_WORKSPACE}/test/e2e_tests.sh"
-        bash +x "${GITHUB_WORKSPACE}/test/e2e_tests.sh"
+      run: bb -f "${GITHUB_WORKSPACE}/test_e2e/test.clj"
