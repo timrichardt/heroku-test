@@ -1,6 +1,7 @@
-(ns clojure-getting-started.web-test
+(ns heroku-test.web-test
   (:require [clojure.test :refer :all]
-            [clojure-getting-started.web :refer :all]))
+            [heroku-test.web :as web]))
 
-(deftest first-test
-  (is false "Tests should be written"))
+
+(deftest hash
+  (is (= (web/hash [12 3 3]) 9)))
