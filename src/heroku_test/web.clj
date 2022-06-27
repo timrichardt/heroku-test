@@ -1,26 +1,87 @@
 (ns heroku-test.web
-  (:require [compojure.core :refer [defroutes GET PUT POST DELETE ANY]]
-            [compojure.handler :refer [site]]
-            [compojure.route :as route]
-            [clojure.java.io :as io]
+  (:require [compojure.core :refer [defroutes POST ANY]]
             [ring.adapter.jetty :as jetty]
+            [ring.middleware.json :refer [wrap-json-response wrap-json-body]]
             [environ.core :refer [env]]))
 
-(defn splash []
-  {:status 200
+
+(defn NOT_FOUND
+  "Status 404 Not Found response."
+  [_]
+  {:status 404
    :headers {"Content-Type" "text/plain"}
-   :body "Hello from Heroku!"})
+   :body "404"})
 
-(defroutes app
-  (GET "/" []
-       (splash))
-  (ANY "*" []
-       (route/not-found (slurp (io/resource "404.html")))))
 
-(defn -main [& [port]]
+(defn BAD_REQUEST
+  "Status 400 Bad Request response with body `error`."
+  [error]
+  {:status  400
+   :headers {}
+   :body    error})
+
+
+(defn OK
+  "Status 200 OK response with body `body`."
+  [body]
+  {:status  200
+   :headers {}
+   :body    body})
+
+
+(defn- int->digit-sequence
+  "Takes integer `number` and returns sequence of its digits in base 10."
+  ([number]
+   {:pre (int? number)}
+   (int->digit-sequence number []))
+  ([number digits]
+   (if (zero? number)
+     (reverse digits)
+     (let [remainder (mod number 10)]
+       (recur (/ (- number remainder) 10) (conj digits remainder))))))
+
+
+(defn hash
+  "Compute some hash of integer sequence `values`.
+
+  The hash is the digit sum of the sum of `values`."
+  [values]
+  (->> values
+       (reduce +)
+       int->digit-sequence
+       (reduce +)))
+
+
+(defn hash-handler
+  "Handles hash input validation and computation."
+  [request]  
+  (let [values (get-in request [:body "address" "values"])]
+    (cond (not values)
+          (BAD_REQUEST {:error "Invalid request input: no key address.values."})
+
+          (not (every? int? values))
+          (BAD_REQUEST {:error          "Invalid request input: address.input must be an array of integers."
+                        :address.values values})
+
+          :else
+          (OK {:result (hash values)}))))
+
+
+(defroutes service
+  (POST "/" [] (->> hash-handler
+                    wrap-json-body
+                    wrap-json-response))
+  (ANY "*" [] NOT_FOUND))
+
+
+(defn -main
+  ""
+  [& [port]]
   (let [port (Integer. (or port (env :port) 5000))]
-    (jetty/run-jetty (site #'app) {:port port :join? false})))
+    (jetty/run-jetty service {:port port :join? false})))
 
-;; For interactive development:
-;; (.stop server)
-;; (def server (-main))
+
+(comment
+  ;; For interactive development:
+  (def server (-main))
+  (.stop server))
