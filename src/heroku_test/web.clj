@@ -2,7 +2,9 @@
   (:require [compojure.core :refer [defroutes POST ANY]]
             [ring.adapter.jetty :as jetty]
             [ring.middleware.json :refer [wrap-json-response wrap-json-body]]
-            [environ.core :refer [env]]))
+            [environ.core :refer [env]]
+            [malli.core :as malli]
+            [malli.util :as malli-util]))
 
 
 ;; ----------------------------------------
@@ -75,17 +77,12 @@
 
 (defn hash-handler
   "Handles hash input validation and computation."
-  [request]  
-  (let [values (get-in request [:body "address" "values"])]
-    (cond (not values)
-          (BAD_REQUEST {:error "Invalid request input: no key address.values."})
-
-          (not (every? int? values))
-          (BAD_REQUEST {:error          "Invalid request input: address.input must be an array of integers."
-                        :address.values values})
-
-          :else
-          (OK {:result (hash values)}))))
+  [{:keys [body] :as request}]
+  (let [RequestBody [:map ["address" [:map ["values" [:vector int?]]]]]]
+    (if (malli/validate RequestBody body)
+      (let [values (get-in body ["address" "values"])]
+        (OK {:result (hash values)}))
+      (BAD_REQUEST (malli-util/explain-data RequestBody body)))))
 
 
 ;; ----------------------------------------
