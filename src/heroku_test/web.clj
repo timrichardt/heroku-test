@@ -2,97 +2,55 @@
   (:require [compojure.core :refer [defroutes POST ANY]]
             [ring.adapter.jetty :as jetty]
             [ring.middleware.json :refer [wrap-json-response wrap-json-body]]
+            [ring.util.response :as response]
             [environ.core :refer [env]]
             [malli.core :as malli]
             [malli.util :as malli-util]))
 
 
 ;; ----------------------------------------
-;; Hashing function
+;; Checksum
 
-(defn- int->digit-sequence
-  "Takes integer `number` and returns sequence of its digits in base 10."
-  ([number]
-   {:pre (int? number)}
-   (int->digit-sequence number []))
-  ([number digits]
+(defn- digit-sum
+  "Takes integer `number` and returns its base 10 digit sum."
+  ([number] (digit-sum number 0))
+  ([number result]
    (if (zero? number)
-     (reverse digits)
+     result
      (let [remainder (mod number 10)]
-       (recur (/ (- number remainder) 10) (conj digits remainder))))))
+       (recur (/ (- number remainder) 10) (+ result remainder))))))
 
 
-(defn- int->digit-sequence-2
-  "Takes integer `number` and returns sequence of its digits in base 10.
+(defn checksum
+  "Compute a checksum of integer sequence `values`.
 
-  Another way to `int->digit-sequence`, seems to be faster.
-
-  (criterium.core/bench (int->digit-sequence-2 123456789012345))
-               Execution time mean : 57.865278 ns
-
-  (criterium.core/bench (int->digit-sequence 123456789012345))
-               Execution time mean : 2.482377 µs"
-  [number]
-  (->> (str number)
-       (map #(Integer/parseInt (str %)))))
-
-
-(defn hash
-  "Compute some hash of integer sequence `values`.
-
-  The hash is the digit sum of the sum of `values`."
+  The checksum is the digit sum of the sum of `values`."
   [values]
-  (->> values
-       (reduce +)
-       int->digit-sequence-2
-       (reduce +)))
+  (->> (reduce + values)
+       digit-sum))
 
 
 ;; ----------------------------------------
 ;; Request handlers
 
-(defn NOT_FOUND
-  "Status 404 Not Found response."
-  [_]
-  {:status 404
-   :headers {"Content-Type" "text/plain"}
-   :body "404"})
-
-
-(defn BAD_REQUEST
-  "Status 400 Bad Request response with body `error`."
-  [error]
-  {:status  400
-   :headers {}
-   :body    error})
-
-
-(defn OK
-  "Status 200 OK response with body `body`."
-  [body]
-  {:status  200
-   :headers {}
-   :body    body})
-
-
-(defn hash-handler
-  "Handles hash input validation and computation."
+(defn checksum-handler
+  "Handles checksum input validation and computation."
   [{:keys [body] :as request}]
   (let [RequestBody [:map ["address" [:map ["values" [:vector int?]]]]]]
     (if (malli/validate RequestBody body)
       (let [values (get-in body ["address" "values"])]
-        (OK {:result (hash values)}))
-      (BAD_REQUEST (malli-util/explain-data RequestBody body)))))
+        (response/response {:result (checksum values)}))
+      (response/bad-request (malli-util/explain-data RequestBody body)))))
 
 
 ;; ----------------------------------------
 ;; Routing
 
 (defroutes service
-  (POST "/" [] (->> hash-handler
-                    wrap-json-body
-                    wrap-json-response))
-  (ANY "*" [] NOT_FOUND))
+  (POST "/" [] (-> checksum-handler
+                   wrap-json-response
+                   wrap-json-body))
+  (ANY "*" [] (response/not-found nil)))
 
 
 ;; ----------------------------------------
